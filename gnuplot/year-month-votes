@@ -1,0 +1,9 @@
+set autoscale
+set terminal png size 640,480 enhanced font 'Verdana,10'
+set output 'output/year-month-votes.png'
+set key autotitle columnhead
+set xdata time
+set timefmt "%Y"
+plot "data/chart-year-month-votes" using 1:2 with lines, \
+"data/chart-year-month-votes" using 1:3 with lines, \
+"data/chart-year-month-votes" using 1:4 with lines, 

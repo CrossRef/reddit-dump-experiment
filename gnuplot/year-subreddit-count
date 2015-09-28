@@ -1,0 +1,11 @@
+set autoscale
+set terminal png size 640,480 enhanced font 'Verdana,10'
+set output 'output/year-subreddit-count.png'
+set key autotitle columnhead
+set xdata time
+set timefmt "%Y"
+
+file = 'data/chart-year-subreddit-count'
+cols = int(system('head -1 '.file.' | wc -w'))
+plot for [i=2:cols] file using 1:i with lines
+

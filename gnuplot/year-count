@@ -1,0 +1,6 @@
+set autoscale
+set terminal png size 640,480 enhanced font 'Verdana,10'
+set output 'output/year-count.png'
+set xdata time
+set timefmt "%Y"
+plot "data/chart-year-count" using 1:2 with lines title "Year DOI citation count"
