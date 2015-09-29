@@ -15,6 +15,9 @@ import java.util.Date
 import java.text.SimpleDateFormat 
 
 object Main {
+  val memberDomainRegularExpression = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.txt")).getLines().next().r
+  val memberDomains = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.txt")).getLines().toArray
+
   // Input
   case class Line(
     ups: Integer,
@@ -27,8 +30,7 @@ object Main {
     domain: String,
     subreddit: String,
     selfText: String,
-    description: String
-    )
+    description: String)
 
   def parse (line: String) : Seq[Line] = {
     try {
@@ -73,6 +75,11 @@ object Main {
     line.contains("/10.")
   }
 
+  def likelyPublisherDomain (line: String) : Boolean = {
+     // ! memberDomainRegularExpression.findFirstMatchIn(line).isEmpty
+     ! memberDomains.find(domain => line.indexOf(domain) != -1).isEmpty
+  }
+
   def hasDOI (line : Line) : Boolean = {
     // Quick things first.
     line.domain == "dx.doi.org" || 
@@ -87,19 +94,49 @@ object Main {
     lines.map(x => (x, 1)).reduceByKey(_ + _)
   }
 
+  // Publisher domains year count
+  def publisherYearDomainCountChart(lines: RDD[Line], outputDir : String) {
+    val output = new PrintWriter(outputDir + "/chart-publisher-domain-count")
+    count(lines.map(line => line.created_year))
+      .collect()
+      .map{case (year, count) => "%s\t%d".format(year, count)}
+      .sorted
+      .foreach(output.println)
+    output.close()
+  }
+
+  // Publisher year month count
+  def publisherYearMonthDomainCountChart(lines: RDD[Line], outputDir : String) {
+    val output = new PrintWriter(outputDir + "/chart-publisher-domain-count")
+    count(lines.map(line => line.created_year_month))
+      .collect()
+      .map{case (yearMonth, count) => "%s\t%d".format(yearMonth, count)}
+      .sorted
+      .foreach(output.println)
+    output.close()
+  }
+
   // Year count
   def yearCountChart(lines: RDD[Line], outputDir : String) {
-    val cyc = new PrintWriter(outputDir + "/chart-year-count")
-    count(lines.map(line => line.created_year)).collect().map{case (year, count) => "%s\t%d".format(year, count)}.foreach(cyc.println)
-    cyc.close()
-
+    val output = new PrintWriter(outputDir + "/chart-year-count")
+    count(lines.map(line => line.created_year))
+      .collect()
+      .map{case (year, count) => "%s\t%d".format(year, count)}
+      .sorted
+      .foreach(output.println)
+    output.close()
   }
 
   // Year month count
   def yearMonthCountChart(lines: RDD[Line], outputDir : String) {
-    val cymc = new PrintWriter(outputDir + "/chart-year-month-count")
-    count(lines.map(line => line.created_year_month)).collect().map{case (yearMonth, count) => "%s\t%d".format(yearMonth, count)}.foreach(cymc.println)
-    cymc.close()
+    val output = new PrintWriter(outputDir + "/chart-year-month-count")
+    count(lines.map(line => line.created_year_month))
+      .collect()
+      .map{case (yearMonth, count) => "%s\t%d"
+      .format(yearMonth, count)}
+      .sorted
+      .foreach(output.println)
+    output.close()
   }
 
   def votesMonthCount(lines: RDD[Line], outputDir : String) {
@@ -119,50 +156,50 @@ object Main {
 
   // Year subreddit count
   def yearSubredditCountChart(lines: RDD[Line], outputDir : String) {
-    val cysr = new PrintWriter(outputDir + "/chart-year-subreddit-count")
+    val output = new PrintWriter(outputDir + "/chart-year-subreddit-count")
     val cysrData = count(lines.map(line => Tuple2(line.created_year, line.subreddit))).collect()
 
     val subreddits = cysrData.map{ case Tuple2(Tuple2(_, subreddit: String), _) => subreddit}.distinct.sorted
     val years = cysrData.map{case Tuple2(Tuple2(year : String, _), _) => year}.distinct.sorted
 
-    cysr.print("year\t")
-    cysr.println(subreddits.mkString("\t"))
+    output.print("year\t")
+    output.println(subreddits.mkString("\t"))
     years.foreach(year => {
-      cysr.print(year)
+      output.print(year)
       subreddits.foreach(subreddit => {
-        cysr.print("\t")
+        output.print("\t")
         // Linear search but there isn't much data here.
-        cysr.print(cysrData.filter{case Tuple2(x, _) => x == Tuple2(year, subreddit)}.headOption match {
+        output.print(cysrData.filter{case Tuple2(x, _) => x == Tuple2(year, subreddit)}.headOption match {
           case Some(Tuple2(_, count)) => count
           case None => 0})
         })
-      cysr.println()
+      output.println()
       })
-    cysr.close()
+    output.close()
   }
 
   def yearMonthSubredditCountChart(lines: RDD[Line], outputDir : String) {
      // Year month subreddit count
-    val cymsr = new PrintWriter(outputDir + "/chart-year-month-subreddit-count")
+    val output = new PrintWriter(outputDir + "/chart-year-month-subreddit-count")
     val cymsrData = count(lines.map(line => Tuple2(line.created_year_month, line.subreddit))).collect()
 
     val subreddits = cymsrData.map{ case Tuple2(Tuple2(_, subreddit : String), _) => subreddit}.distinct.sorted
     val years = cymsrData.map{case Tuple2(Tuple2(yearMonth : String, _), _) => yearMonth}.distinct.sorted
 
-    cymsr.print("yearMonth\t")
-    cymsr.println(subreddits.mkString("\t"))
+    output.print("yearMonth\t")
+    output.println(subreddits.mkString("\t"))
     years.foreach(yearMonth => {
-      cymsr.print(yearMonth)
+      output.print(yearMonth)
       subreddits.foreach(subreddit => {
-        cymsr.print("\t")
+        output.print("\t")
         // Linear search but there isn't much data here.
-        cymsr.print(cymsrData.filter{case Tuple2(x, _) => x == Tuple2(yearMonth, subreddit)}.headOption match {
+        output.print(cymsrData.filter{case Tuple2(x, _) => x == Tuple2(yearMonth, subreddit)}.headOption match {
           case Some(Tuple2(_, count)) => count
           case None => 0})
         })
-      cymsr.println()
+      output.println()
       })
-    cymsr.close()
+    output.close()
   }
 
 
@@ -173,12 +210,19 @@ object Main {
     val inputFile = sparkConf.get("spark.reddit.inputfile")
     val outputDir = sparkConf.get("spark.reddit.outputdir")
     
-    val input = sc.textFile(inputFile).filter(likelyDOI).flatMap(parse).filter(hasDOI).persist(StorageLevel.DISK_ONLY)
+    // Lines of DOIs.
+    val doiInput = sc.textFile(inputFile).filter(likelyDOI).flatMap(parse).filter(hasDOI).persist(StorageLevel.DISK_ONLY)
 
-    yearCountChart(input, outputDir)
-    yearMonthCountChart(input, outputDir)
-    yearSubredditCountChart(input, outputDir)
-    yearMonthSubredditCountChart(input, outputDir)
-    votesMonthCount(input, outputDir)
+    // Lines of publisher domains that could be DOIs.
+    val publisherDomainInput = sc.textFile(inputFile).filter(likelyPublisherDomain).flatMap(parse).persist(StorageLevel.DISK_ONLY)
+
+    yearCountChart(doiInput, outputDir)
+    yearMonthCountChart(doiInput, outputDir)
+    yearSubredditCountChart(doiInput, outputDir)
+    yearMonthSubredditCountChart(doiInput, outputDir)
+    votesMonthCount(doiInput, outputDir)
+
+    publisherYearDomainCountChart(publisherDomainInput, outputDir)
+    publisherYearMonthDomainCountChart(publisherDomainInput, outputDir)
   }
 }

@@ -1,0 +1,6 @@
+set autoscale
+set terminal png size 1024,768 enhanced font 'Verdana,10'
+set output 'output/year-month-publisher-domain.png'
+set xdata time
+set timefmt "%Y"
+plot "data/chart-year-month-publisher-domain-count" using 1:2 with lines title "Year month Publisher domain citation count"

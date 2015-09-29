@@ -2,6 +2,8 @@ cd gnuplot
 mkdir output
 gnuplot year-count
 gnuplot year-month-count
+gnuplot year-month-publisher-domain-count
 gnuplot year-month-subreddit-count
+gnuplot year-month-votes
+gnuplot year-publisher-domain-count
 gnuplot year-subreddit-count
-gnuplot year-month-subreddit-count

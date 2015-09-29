@@ -1,5 +1,5 @@
 set autoscale
-set terminal png size 640,480 enhanced font 'Verdana,10'
+set terminal png size 1024,768 enhanced font 'Verdana,10'
 set output 'output/year-month-votes.png'
 set key autotitle columnhead
 set xdata time
