@@ -25,34 +25,47 @@ object Main {
     created_year: String,
     created_year_month: String,
     domain: String,
-    subreddit: String)
+    subreddit: String,
+    selfText: String,
+    description: String
+    )
 
-  def parse (line: String) : Line = {
-    val json: Option[Any] = JSON.parseFull(line)
-    val map: Map[String,Any] = json.get.asInstanceOf[Map[String, Any]]
+  def parse (line: String) : Seq[Line] = {
+    try {
 
-     // This is coming from JSON. No integers.
-    val ups = map.get("ups").get.asInstanceOf[Double].toInt
-    val downs = map.get("downs").get.asInstanceOf[Double].toInt
+      val json: Option[Any] = JSON.parseFull(line)
+      val map: Map[String,Any] = json.get.asInstanceOf[Map[String, Any]]
 
-    val date = new java.util.Date(map.get("created_utc").get.asInstanceOf[String].toLong * 1000)
+       // This is coming from JSON. No integers.
+      val ups = map.get("ups").get.asInstanceOf[Double].toInt
+      val downs = map.get("downs").get.asInstanceOf[Double].toInt
 
-    // SimpleDateFormat isn't threadsafe.
-    val yyyyMM = new SimpleDateFormat("yyyy-MM")
-    val yyyy = new SimpleDateFormat("yyyy")
+      val date = new java.util.Date(map.get("created_utc").get.asInstanceOf[String].toLong * 1000)
 
-    val result = new Line(
-      ups,
-      downs,
-      ups - downs,
-      map.get("url").get.asInstanceOf[String],
-      date,
-      yyyy.format(date),
-      yyyyMM.format(date),
-      map.get("domain").get.asInstanceOf[String],
-      map.get("subreddit").get.asInstanceOf[String])
+      // SimpleDateFormat isn't threadsafe.
+      val yyyyMM = new SimpleDateFormat("yyyy-MM")
+      val yyyy = new SimpleDateFormat("yyyy")
 
-    result
+      val result = new Line(
+        ups,
+        downs,
+        ups - downs,
+        map.get("url").get.asInstanceOf[String],
+        date,
+        yyyy.format(date),
+        yyyyMM.format(date),
+        map.get("domain").get.asInstanceOf[String],
+        map.get("subreddit").get.asInstanceOf[String],
+        map.get("selftext").getOrElse("").asInstanceOf[String],
+        map.get("description").getOrElse("").asInstanceOf[String])
+
+      List(result)
+    } catch {
+      // Input may be mysteriously malformed.
+      case e : java.util.NoSuchElementException => {
+        println("ERROR " + line)
+        List()}
+    }
   }
 
   // Filter lines that probably contain a DOI to avoid parsing them.
@@ -64,7 +77,9 @@ object Main {
     // Quick things first.
     line.domain == "dx.doi.org" || 
     line.domain == "doi.org" || 
-    (line.domain.contains("10.") && line.domain.contains("doi"))
+    (line.domain.contains("10.") && line.domain.contains("doi.org")) || 
+    (line.selfText.contains("10.") && line.selfText.contains("doi.org")) || 
+    (line.description.contains("10.") && line.description.contains("doi.org"))
   }
 
   // Aggregate
@@ -158,7 +173,7 @@ object Main {
     val inputFile = sparkConf.get("spark.reddit.inputfile")
     val outputDir = sparkConf.get("spark.reddit.outputdir")
     
-    val input = sc.textFile(inputFile).filter(likelyDOI).map(parse).filter(hasDOI).persist(StorageLevel.DISK_ONLY)
+    val input = sc.textFile(inputFile).filter(likelyDOI).flatMap(parse).filter(hasDOI).persist(StorageLevel.DISK_ONLY)
 
     yearCountChart(input, outputDir)
     yearMonthCountChart(input, outputDir)
