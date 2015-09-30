@@ -72,11 +72,10 @@ object Main {
 
   // Filter lines that probably contain a DOI to avoid parsing them.
   def likelyDOI (line : String) : Boolean = {
-    line.contains("/10.")
+    line.contains("doi.org/10.")
   }
 
   def likelyPublisherDomain (line: String) : Boolean = {
-     // ! memberDomainRegularExpression.findFirstMatchIn(line).isEmpty
      ! memberDomains.find(domain => line.indexOf(domain) != -1).isEmpty
   }
 
@@ -84,9 +83,9 @@ object Main {
     // Quick things first.
     line.domain == "dx.doi.org" || 
     line.domain == "doi.org" || 
-    (line.domain.contains("10.") && line.domain.contains("doi.org")) || 
-    (line.selfText.contains("10.") && line.selfText.contains("doi.org")) || 
-    (line.description.contains("10.") && line.description.contains("doi.org"))
+    line.domain.contains("doi.org/10.") || 
+    line.selfText.contains("doi.org/10.") || 
+    line.description.contains("doi.org/10.")
   }
 
   // Aggregate
