@@ -33,3 +33,7 @@ Assuming you have Scala and SBT installed.
 ## To tweak
 
 You should probably take the first 5GB of the dump to get any data at all (assuming it starts in 2006). 
+
+To update regular expression of publisher domains from the [member-domains](https://github.com/CrossRef/member-domains) project:
+
+    lein run dump-domains > /path/to/reddit-dump-experiment/src/main/resources/publisherdomains.txt
