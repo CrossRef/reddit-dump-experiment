@@ -13,6 +13,7 @@ import java.io.PrintWriter
 import scala.util.parsing.json._
 import java.util.Date
 import java.text.SimpleDateFormat 
+import java.net.{HttpURLConnection, URL, URLDecoder}
 
 object Main {
   val memberDomainRegularExpression = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.txt")).getLines().next().r
@@ -20,6 +21,7 @@ object Main {
 
   // Input
   case class Line(
+    id: String,
     ups: Integer,
     downs: Integer,
     score: Integer,
@@ -30,13 +32,31 @@ object Main {
     domain: String,
     subreddit: String,
     selfText: String,
-    description: String)
+    description: String,
+    allText: String)
+
+  // Extract all text values from a JSON map recursively.
+  def stuffFromMap (input: Map[String, Any]) : Iterable[String] = {
+    input.flatMap{
+      case Tuple2(a : String, b : Any) => {
+        b match {
+          case value : String => List(value)
+          case anotherMap : Map[String, Any] => stuffFromMap(anotherMap.asInstanceOf[Map[String, Any]])
+          case default => List()}
+        }
+      // e.g. null values.
+      case default => List()
+    }
+  }
 
   def parse (line: String) : Seq[Line] = {
     try {
 
       val json: Option[Any] = JSON.parseFull(line)
       val map: Map[String,Any] = json.get.asInstanceOf[Map[String, Any]]
+
+      // Just everything stringy. Last resort.
+      val allText = stuffFromMap(map).mkString(" ")
 
        // This is coming from JSON. No integers.
       val ups = map.get("ups").get.asInstanceOf[Double].toInt
@@ -49,6 +69,7 @@ object Main {
       val yyyy = new SimpleDateFormat("yyyy")
 
       val result = new Line(
+        map.get("id").get.asInstanceOf[String],
         ups,
         downs,
         ups - downs,
@@ -59,7 +80,8 @@ object Main {
         map.get("domain").get.asInstanceOf[String],
         map.get("subreddit").get.asInstanceOf[String],
         map.get("selftext").getOrElse("").asInstanceOf[String],
-        map.get("description").getOrElse("").asInstanceOf[String])
+        map.get("description").getOrElse("").asInstanceOf[String],
+        allText)
 
       List(result)
     } catch {
@@ -70,9 +92,45 @@ object Main {
     }
   }
 
+  def doiRe = "(?i)10.\\d{4,9}/[-._;()/:A-Z0-9]+".r
+
+  // Extract the first DOI we find. Knock characters off the end until we get one that maches.
+  def extractDOI(input: String) : Option[String] = {
+      // https://www.reddit.com/wiki/commenting
+      val prepared = input.replace("\\)", ")").replace("\\(", "(")
+      val unencoded = URLDecoder.decode(prepared,"UTF-8")
+
+      doiRe.findFirstIn(unencoded) match {
+        case None => None
+        case Some(matchedLink) => {
+          // find returns an option
+          val firstLink = (0 to 4)
+            .map(n => matchedLink.dropRight(n))
+            .find(doi => {
+              val url = "http://doi.org/" + doi
+              val connection = new URL(url).openConnection().asInstanceOf[HttpURLConnection]
+
+              connection.setInstanceFollowRedirects(false)
+
+              val responseCode = connection.getResponseCode()
+
+              (responseCode / 100 == 3) || (responseCode / 100 == 2) })
+              
+          firstLink
+        }
+      }
+  }
+
   // Filter lines that probably contain a DOI to avoid parsing them.
   def likelyDOI (line : String) : Boolean = {
-    line.contains("doi.org/10.")
+    val result = line.contains("doi.org/10.")
+
+    // Only enable this if you are debugging things you know to contain DOIs.
+    // if (!result) {
+    //   println("LIKELY NOT " + line)
+    // }
+
+    result
   }
 
   def likelyPublisherDomain (line: String) : Boolean = {
@@ -81,11 +139,17 @@ object Main {
 
   def hasDOI (line : Line) : Boolean = {
     // Quick things first.
-    line.domain == "dx.doi.org" || 
-    line.domain == "doi.org" || 
-    line.domain.contains("doi.org/10.") || 
-    line.selfText.contains("doi.org/10.") || 
-    line.description.contains("doi.org/10.")
+    val hasDoi = line.domain == "dx.doi.org" || 
+      line.domain == "doi.org" || 
+      line.domain.contains("doi.org/10.") || 
+      line.allText.contains("doi.org/10.") 
+
+    // Only enable this if you are debugging things you know to contain DOIs.
+    // if (!hasDoi) {
+    //   println("HAS NOT " + line)
+    // }
+
+    hasDoi
   }
 
   // Aggregate
@@ -201,6 +265,38 @@ object Main {
     output.close()
   }
 
+  // Return a Seq pretending to be an Option, makes for more efficient filtering in Spark with flatMap.
+  def doiFromLine(line : Line) : Seq[String] = {
+
+    if (line.domain.indexOf("doi.org") != -1) {
+      // First try the domain.
+      val withoutResolver = line.url.replaceAll("^.+/10\\.", "10.")
+      
+      println("ID " + line.id + " DOI WR " + withoutResolver)
+      List(withoutResolver)
+    } else {
+      // Failing that search the text.
+      val extracted = extractDOI(line.allText)
+
+      val result = extracted match {
+        case None => List()
+        case Some(doi) => List(doi)
+      }
+
+       if (result.isEmpty) {
+          println("COULDN'T FIND " + line.id)
+        }
+
+      // extracted
+      result
+    }
+  }
+
+  def doiList(lines: RDD[Line], outputDir : String) {
+    val dois = lines.flatMap(doiFromLine).repartition(1)
+
+    dois.saveAsTextFile(outputDir + "/doi-list") 
+  }
 
   def main(args: Array[String]) {      
     val sparkConf = new SparkConf()
@@ -214,7 +310,7 @@ object Main {
 
     // Lines of publisher domains that could be DOIs.
     val publisherDomainInput = sc.textFile(inputFile).filter(likelyPublisherDomain).flatMap(parse).persist(StorageLevel.DISK_ONLY)
-
+    
     yearCountChart(doiInput, outputDir)
     yearMonthCountChart(doiInput, outputDir)
     yearSubredditCountChart(doiInput, outputDir)
@@ -223,5 +319,7 @@ object Main {
 
     publisherYearDomainCountChart(publisherDomainInput, outputDir)
     publisherYearMonthDomainCountChart(publisherDomainInput, outputDir)
+
+    doiList(doiInput, outputDir)
   }
 }
