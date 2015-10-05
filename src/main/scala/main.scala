@@ -15,9 +15,33 @@ import java.util.Date
 import java.text.SimpleDateFormat 
 import java.net.{HttpURLConnection, URL, URLDecoder}
 
+// Search for domains that belong to members of Crossref, i.e. that domains resolve to. This list is tored in src/main/resources/publisherdomains.json
+// See README.md for instructions about re-generating this.
+object MemberDomains {
+  val input = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.json")).mkString
+  val json: Option[Any] = JSON.parseFull(input)
+  
+  // Sequence of (substring, list-of-domains), in order.
+  // It would be nice to specify this as List[Tuple2[String, List[String]]] but doesn't look like that can happen automatically.
+  // Instead we have to settle for Any.
+  val structure: List[List[Any]] = json.get.asInstanceOf[List[List[Any]]]
+
+  def matches(soughtDomain: String) : Option[String] = {
+    // Linear search of greatest common substrings in order of popularity. These are mutually exclusive, so find only the first match.
+    val substringMatch = structure.find{case List(substring: String, domains: List[String]) => 
+      soughtDomain.contains(substring)
+    }
+
+    // If found, linear search for domains that have the substring as the greatest common factor.
+    substringMatch match {
+      case Some(List(_, domains: List[String])) => domains.find{domain => soughtDomain.contains(domain)}
+      case None => None
+    }
+  }
+}
+
 object Main {
-  val memberDomainRegularExpression = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.txt")).getLines().next().r
-  val memberDomains = scala.io.Source.fromInputStream(Main.getClass.getClassLoader().getResourceAsStream("publisherdomains.txt")).getLines().toArray
+  val memberDomains = MemberDomains
 
   // Input
   case class Line(
@@ -134,7 +158,8 @@ object Main {
   }
 
   def likelyPublisherDomain (line: String) : Boolean = {
-     ! memberDomains.find(domain => line.indexOf(domain) != -1).isEmpty
+     // ! memberDomains.find(domain => line.indexOf(domain) != -1).isEmpty
+     ! memberDomains.matches(line).isEmpty
   }
 
   def hasDOI (line : Line) : Boolean = {
@@ -287,8 +312,14 @@ object Main {
           println("COULDN'T FIND " + line.id)
         }
 
-      // extracted
       result
+    }
+  }
+
+  def urlFromLine(line: Line) : Seq[String] = {
+    line.url match {
+      case "" => List()
+      case url => List(url)
     }
   }
 
@@ -298,28 +329,64 @@ object Main {
     dois.saveAsTextFile(outputDir + "/doi-list") 
   }
 
+  def publisherDomainList(lines: RDD[Line], outputDir : String) {
+    // For now we're only going to get the domains, even though we searched in the full text for the publisher domain.
+    // This means that this list may be shorter than that reported by the count.
+    val dois = lines.flatMap(urlFromLine).distinct.repartition(1)
+
+    dois.saveAsTextFile(outputDir + "/publisher-domain-list") 
+  }
+
   def main(args: Array[String]) {      
     val sparkConf = new SparkConf()
     val sc =  new SparkContext(sparkConf)    
     
     val inputFile = sparkConf.get("spark.reddit.inputfile")
     val outputDir = sparkConf.get("spark.reddit.outputdir")
-    
+    val tasks = sparkConf.get("spark.reddit.tasks")
+
+    // As these are lazily created, if there are no tasks that use them, no problem.
     // Lines of DOIs.
     val doiInput = sc.textFile(inputFile).filter(likelyDOI).flatMap(parse).filter(hasDOI).persist(StorageLevel.DISK_ONLY)
 
     // Lines of publisher domains that could be DOIs.
     val publisherDomainInput = sc.textFile(inputFile).filter(likelyPublisherDomain).flatMap(parse).persist(StorageLevel.DISK_ONLY)
     
-    yearCountChart(doiInput, outputDir)
-    yearMonthCountChart(doiInput, outputDir)
-    yearSubredditCountChart(doiInput, outputDir)
-    yearMonthSubredditCountChart(doiInput, outputDir)
-    votesMonthCount(doiInput, outputDir)
+    if (tasks.contains("yearCountChart")) {
+      yearCountChart(doiInput, outputDir)
+    }
 
-    publisherYearDomainCountChart(publisherDomainInput, outputDir)
-    publisherYearMonthDomainCountChart(publisherDomainInput, outputDir)
+    if (tasks.contains("yearMonthCountChart")) {
+      yearMonthCountChart(doiInput, outputDir)
+    }
 
-    doiList(doiInput, outputDir)
+    if (tasks.contains("yearSubredditCountChart")) {
+      yearSubredditCountChart(doiInput, outputDir)
+    }
+
+    if (tasks.contains("yearMonthSubredditCountChart")) {
+      yearMonthSubredditCountChart(doiInput, outputDir)
+    }
+
+    if (tasks.contains("votesMonthCount")) {
+      votesMonthCount(doiInput, outputDir)
+    }
+
+    if (tasks.contains("publisherYearDomainCountChart")) {
+      publisherYearDomainCountChart(publisherDomainInput, outputDir)
+    }
+
+    if (tasks.contains("publisherYearMonthDomainCountChart")) {
+      publisherYearMonthDomainCountChart(publisherDomainInput, outputDir)
+    }
+
+    if (tasks.contains("publisherDomainList")) {
+      publisherDomainList(publisherDomainInput, outputDir)
+    }
+
+    if (tasks.contains("doiList")) {
+      doiList(doiInput, outputDir)
+    }
+
   }
 }
