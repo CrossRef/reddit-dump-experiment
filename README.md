@@ -15,6 +15,8 @@ Outputs:
  - `publisherYearMonthDomainCountChart` - Count of mentions of URls that could be DOIs, per month, gnuplot format
  - `publisherDomainList` - List of distinct URLs that belong to domains that could be DOIs. List of text.
  - `doiList` - List of distinct DOIs that belong to domains that could be DOIs. List of text.
+ - `publisherDomainListEntire` - As per `publisherDomainList` but returns entire input line. Complete JSON structure per line.
+ - `doiListEntire` - As per `doiListEntire` but returns entire input line. Complete JSON structure per line.
 
 
 ## To use
@@ -37,13 +39,12 @@ Assuming you have Scala and SBT installed.
 		time ~/Downloads/spark-1.4.1-bin-hadoop2.6/bin/spark-submit \
 		    --conf spark.reddit.inputfile="file:///tmp/RS_full_corpus-5gb" \
 		    --conf spark.reddit.outputdir="./output" \
-        
-        --conf spark.reddit.tasks="publisherYearDomainCountChart,publisherYearMonthDomainCountChart,publisherDomainList,doiList"
+        --conf spark.reddit.tasks="yearCountChart" \
 		    --master local[*] \
 		    --class org.crossref.reddit.Main ./target/scala-2.10/reddit-dump-experiment-assembly-0.1-SNAPSHOT.jar
 
-    # full complement:
-    --conf spark.reddit.tasks="yearCountChart,yearMonthCountChart,yearSubredditCountChart,yearMonthSubredditCountChart,votesMonthCount,publisherYearDomainCountChart,publisherYearMonthDomainCountChart,publisherDomainList,doiList"
+        # full complement:
+        --conf spark.reddit.tasks="yearCountChart,yearMonthCountChart,yearSubredditCountChart,yearMonthSubredditCountChart,votesMonthCount,publisherYearDomainCountChart,publisherYearMonthDomainCountChart,publisherDomainList,doiList,publisherDomainListEntire,doiListEntire"
 
 3. Data will go into gnuplot/data
 4. Produce charts with `./plots.sh` . Plots will go into `gnuplot/output`.
@@ -90,3 +91,7 @@ return whole line 7m10.045s, 9962 lines
 return just domain 7m15.436s, 9128 lines
 
 So the numbers are in the right ball-park. It's probably worth saving the expense of extracting and verifying URLs at this volume.
+
+## Notes
+
+http://www.scala-sbt.org/0.13/tutorial/Installing-sbt-on-Linux.html
